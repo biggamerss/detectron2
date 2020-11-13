@@ -1,9 +1,9 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
 import pickle
 from fvcore.common.checkpoint import Checkpointer
-from fvcore.common.file_io import PathManager
 
 import detectron2.utils.comm as comm
+from detectron2.utils.file_io import PathManager
 
 from .c2_model_loading import align_and_update_state_dicts
 
@@ -22,6 +22,18 @@ class DetectionCheckpointer(Checkpointer):
             save_to_disk=is_main_process if save_to_disk is None else save_to_disk,
             **checkpointables,
         )
+        if hasattr(self, "path_manager"):
+            self.path_manager = PathManager
+        else:
+            # This could only happen for open source
+            # TODO remove after upgrading fvcore
+            from fvcore.common.file_io import PathManager as g_PathManager
+
+            for handler in PathManager._path_handlers.values():
+                try:
+                    g_PathManager.register_handler(handler)
+                except KeyError:
+                    pass
 
     def _load_file(self, filename):
         if filename.endswith(".pkl"):
@@ -56,4 +68,18 @@ class DetectionCheckpointer(Checkpointer):
             )
             checkpoint["model"] = model_state_dict
         # for non-caffe2 models, use standard ways to load it
-        super()._load_model(checkpoint)
+        incompatible = super()._load_model(checkpoint)
+        if incompatible is None:  # support older versions of fvcore
+            return None
+
+        model_buffers = dict(self.model.named_buffers(recurse=False))
+        for k in ["pixel_mean", "pixel_std"]:
+            # Ignore missing key message about pixel_mean/std.
+            # Though they may be missing in old checkpoints, they will be correctly
+            # initialized from config anyway.
+            if k in model_buffers:
+                try:
+                    incompatible.missing_keys.remove(k)
+                except ValueError:
+                    pass
+        return incompatible

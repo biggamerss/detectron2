@@ -1,13 +1,15 @@
-# Copyright (c) Facebook, Inc. and its affiliates. All Rights Reserved
+# Copyright (c) Facebook, Inc. and its affiliates.
+import atexit
 import functools
 import logging
 import os
 import sys
 import time
 from collections import Counter
-from fvcore.common.file_io import PathManager
 from tabulate import tabulate
 from termcolor import colored
+
+from detectron2.utils.file_io import PathManager
 
 
 class _ColorfulFormatter(logging.Formatter):
@@ -35,7 +37,7 @@ def setup_logger(
     output=None, distributed_rank=0, *, color=True, name="detectron2", abbrev_name=None
 ):
     """
-    Initialize the detectron2 logger and set its verbosity level to "INFO".
+    Initialize the detectron2 logger and set its verbosity level to "DEBUG".
 
     Args:
         output (str): a file name or a directory to save log. If None, will not save log file.
@@ -98,7 +100,9 @@ def setup_logger(
 # with the same file name can safely write to the same file.
 @functools.lru_cache(maxsize=None)
 def _cached_log_stream(filename):
-    return PathManager.open(filename, "a")
+    io = PathManager.open(filename, "a")
+    atexit.register(io.close)
+    return io
 
 
 """
